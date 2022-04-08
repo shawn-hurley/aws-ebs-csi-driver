@@ -31,6 +31,7 @@ import (
 	"github.com/kubernetes-sigs/aws-ebs-csi-driver/pkg/util"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	diffsnapcontroller "k8s.io/differentialsnapshot/pkg/changedblockservice/changed_block_service"
 	"k8s.io/klog"
 )
 
@@ -55,6 +56,39 @@ var (
 )
 
 const isManagedByDriver = "true"
+
+type differentialSnapshotService struct {
+	cloud         cloud.Cloud
+	inFlight      *internal.InFlight
+	driverOptions *DriverOptions
+	diffsnapcontroller.UnimplementedDifferentialSnapshotServer
+}
+
+func newDifferentialSnapshotService(driverOptions *DriverOptions) differentialSnapshotService {
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		klog.V(5).Infof("[Debug] Retrieving region from metadata service")
+		metadata, err := NewMetadataFunc(cloud.DefaultEC2MetadataClient, cloud.DefaultKubernetesAPIClient)
+		if err != nil {
+			panic(err)
+		}
+		region = metadata.GetRegion()
+	}
+
+	cloudSrv, err := NewCloudFunc(region, driverOptions.awsSdkDebugLog)
+	if err != nil {
+		panic(err)
+	}
+
+	klog.V(1).Info("Creating differential Snapshot Service")
+
+	return differentialSnapshotService{
+		cloud:                                   cloudSrv,
+		inFlight:                                internal.NewInFlight(),
+		driverOptions:                           driverOptions,
+		UnimplementedDifferentialSnapshotServer: diffsnapcontroller.UnimplementedDifferentialSnapshotServer{},
+	}
+}
 
 // controllerService represents the controller service of CSI driver
 type controllerService struct {
@@ -95,6 +129,25 @@ func newControllerService(driverOptions *DriverOptions) controllerService {
 		inFlight:      internal.NewInFlight(),
 		driverOptions: driverOptions,
 	}
+}
+
+func (d *differentialSnapshotService) GetChangedBlocks(ctx context.Context, req *diffsnapcontroller.GetChangedBlocksRequest) (*diffsnapcontroller.GetChangedBlocksResponse, error) {
+	cbts, err := d.cloud.GetChangedBlocks(ctx, req.SnapshotTarget, req.SnapshotBase)
+	if err != nil {
+		return nil, err
+	}
+	c := []*diffsnapcontroller.ChangedBlock{}
+	for _, cbt := range cbts {
+		for _, changedBlock := range cbt.ChangedBlocks {
+			c = append(c, &diffsnapcontroller.ChangedBlock{
+				Offset:  uint64(*changedBlock.BlockIndex),
+				Size:    uint64(*cbt.BlockSize),
+				ZeroOut: false,
+				Context: []byte{},
+			})
+		}
+	}
+	return &diffsnapcontroller.GetChangedBlocksResponse{ChangedBlocks: c}, nil
 }
 
 func (d *controllerService) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {

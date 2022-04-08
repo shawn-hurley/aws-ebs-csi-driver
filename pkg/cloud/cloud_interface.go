@@ -21,4 +21,5 @@ type Cloud interface {
 	GetSnapshotByName(ctx context.Context, name string) (snapshot *Snapshot, err error)
 	GetSnapshotByID(ctx context.Context, snapshotID string) (snapshot *Snapshot, err error)
 	ListSnapshots(ctx context.Context, volumeID string, maxResults int64, nextToken string) (listSnapshotsResponse *ListSnapshotsResponse, err error)
+	GetChangedBlocks(ctx context.Context, snapshotID, oldSnapshotID string) ([]ListChangedBlocksResponse, error)
 }

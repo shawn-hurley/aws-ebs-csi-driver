@@ -24,6 +24,8 @@ import (
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-sigs/aws-ebs-csi-driver/pkg/util"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+	diffsnapcontroller "k8s.io/differentialsnapshot/pkg/changedblockservice/changed_block_service"
 	"k8s.io/klog"
 )
 
@@ -54,6 +56,7 @@ const (
 type Driver struct {
 	controllerService
 	nodeService
+	differentialSnapshotService
 
 	srv     *grpc.Server
 	options *DriverOptions
@@ -95,6 +98,7 @@ func NewDriver(options ...func(*DriverOptions)) (*Driver, error) {
 	case AllMode:
 		driver.controllerService = newControllerService(&driverOptions)
 		driver.nodeService = newNodeService(&driverOptions)
+		driver.differentialSnapshotService = newDifferentialSnapshotService(&driverOptions)
 	default:
 		return nil, fmt.Errorf("unknown mode: %s", driverOptions.mode)
 	}
@@ -124,6 +128,7 @@ func (d *Driver) Run() error {
 		grpc.UnaryInterceptor(logErr),
 	}
 	d.srv = grpc.NewServer(opts...)
+	reflection.Register(d.srv)
 
 	csi.RegisterIdentityServer(d.srv, d)
 
@@ -135,6 +140,7 @@ func (d *Driver) Run() error {
 	case AllMode:
 		csi.RegisterControllerServer(d.srv, d)
 		csi.RegisterNodeServer(d.srv, d)
+		diffsnapcontroller.RegisterDifferentialSnapshotServer(d.srv, d)
 	default:
 		return fmt.Errorf("unknown mode: %s", d.options.mode)
 	}

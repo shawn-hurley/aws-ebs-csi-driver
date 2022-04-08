@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ebs"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	dm "github.com/kubernetes-sigs/aws-ebs-csi-driver/pkg/cloud/devicemanager"
 	"github.com/kubernetes-sigs/aws-ebs-csi-driver/pkg/util"
@@ -215,13 +216,35 @@ type ec2ListSnapshotsResponse struct {
 	NextToken *string
 }
 
+type ListChangedBlocksResponse struct {
+	*ebs.ListChangedBlocksOutput
+}
+
 type cloud struct {
 	region string
 	ec2    EC2
 	dm     dm.DeviceManager
+	ebs    EBS
 }
 
 var _ Cloud = &cloud{}
+
+//HACK adding ListChangedBlocks
+func (c *cloud) GetChangedBlocks(ctx context.Context, snapshotID, oldSnapshotID string) ([]ListChangedBlocksResponse, error) {
+	// handle pagination
+	cbt, err := c.ebs.ListChangedBlocks(&ebs.ListChangedBlocksInput{
+		FirstSnapshotId:    &oldSnapshotID,
+		NextToken:          nil,
+		SecondSnapshotId:   &snapshotID,
+		StartingBlockIndex: nil,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return []ListChangedBlocksResponse{
+		{cbt},
+	}, nil
+}
 
 // NewCloud returns a new instance of AWS cloud
 // It panics if session is invalid
@@ -259,11 +282,21 @@ func newEC2Cloud(region string, awsSdkDebugLog bool) (Cloud, error) {
 		Name: "recordRequestsHandler",
 		Fn:   RecordRequestsHandler,
 	})
+	cbtSVC := ebs.New(session.Must(session.NewSession(awsConfig)))
+	svc.Handlers.AfterRetry.PushFrontNamed(request.NamedHandler{
+		Name: "recordThrottledRequestsHandler",
+		Fn:   RecordThrottledRequestsHandler,
+	})
+	svc.Handlers.Complete.PushFrontNamed(request.NamedHandler{
+		Name: "recordRequestsHandler",
+		Fn:   RecordRequestsHandler,
+	})
 
 	return &cloud{
 		region: region,
 		dm:     dm.NewDeviceManager(),
 		ec2:    svc,
+		ebs:    cbtSVC,
 	}, nil
 }
 
