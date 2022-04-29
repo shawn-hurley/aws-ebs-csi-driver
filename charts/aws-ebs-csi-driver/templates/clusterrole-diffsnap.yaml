@@ -1,0 +1,24 @@
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: ebs-diffsnap-controller-role
+  labels:
+    {{- include "aws-ebs-csi-driver.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["differentialsnapshot.example.com"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["*"]
+  # Secret permission is optional.
+  # Enable it if your driver needs secret.
+  # For example, `csi.storage.k8s.io/snapshotter-secret-name` is set in VolumeSnapshotClass.
+  # See https://kubernetes-csi.github.io/docs/secrets-and-credentials.html for more details.
+  # - apiGroups: [ "" ]
+  #   resources: [ "secrets" ]
+  #   verbs: [ "get", "list" ]

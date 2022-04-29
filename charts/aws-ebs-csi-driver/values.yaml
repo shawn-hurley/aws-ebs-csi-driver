@@ -14,6 +14,11 @@ customLabels:
   # k8s-app: aws-ebs-csi-driver
 
 sidecars:
+  diffsnap:
+    image:
+      pullPolicy: Always
+      repository: ""
+      tag: ""
   provisioner:
     env: []
     image:
