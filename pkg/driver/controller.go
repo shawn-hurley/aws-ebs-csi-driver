@@ -139,8 +139,11 @@ func (d *differentialSnapshotService) GetChangedBlocks(ctx context.Context, req 
 	c := []*diffsnapcontroller.ChangedBlock{}
 	for _, cbt := range cbts {
 		for _, changedBlock := range cbt.ChangedBlocks {
+			// Convert blockIndex to offset
+			// DiffSnapController expects offset whereas, ebs returns blockIndex for blocks.
+			// Driver needs to do the conversion to implement the diffsnap common interface
 			c = append(c, &diffsnapcontroller.ChangedBlock{
-				Offset:  uint64(*changedBlock.BlockIndex),
+				Offset:  uint64(*changedBlock.BlockIndex) * uint64(*cbt.BlockSize),
 				Size:    uint64(*cbt.BlockSize),
 				ZeroOut: false,
 				Context: []byte{},
